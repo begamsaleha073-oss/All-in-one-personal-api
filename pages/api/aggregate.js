@@ -1,15 +1,18 @@
-const DEFAULT_TIMEOUT = 9000; 
+const DEFAULT_TIMEOUT = 9000;
 const RETRY_COUNT = 1;
 
 async function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_TIMEOUT, retry = RETRY_COUNT) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
+
   try {
     const res = await fetch(url, { signal: controller.signal, ...opts });
     clearTimeout(timer);
+
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); } catch { json = text; }
+
     return { ok: res.ok, status: res.status, data: json };
   } catch (err) {
     clearTimeout(timer);
@@ -45,32 +48,36 @@ export default async function handler(req, res) {
     }
 
     const resultData = {
-      numspy: null,
+      numspy: [],
       ration: [],
       aadhar: []
     };
 
     let idsToProcess = [];
 
-    // 🔹 Step 1: NumSpy API
+    // 🔹 Step 1: NumSpy API (तेरा नया वाला)
     if (number && !aadhaarInput) {
       const numspyUrl = `https://numspy.vercel.app/api/search?number=${encodeURIComponent(number)}`;
       const rNumspy = await fetchWithTimeout(numspyUrl);
-      
-      if (rNumspy.ok && rNumspy.data && Array.isArray(rNumspy.data.data)) {
-        resultData.numspy = rNumspy.data.data.map(d => ({
-          name: d.name,
-          fname: d.fname,
-          address: d.address,
-          alt: d.alt,
-          circle: d.circle,
-          id: d.id
-        }));
-        idsToProcess = uniqStrings(rNumspy.data.data.map(d => d.id).filter(Boolean));
+
+      if (rNumspy.ok && rNumspy.data && rNumspy.data.data) {
+        const arr = Array.isArray(rNumspy.data.data) ? rNumspy.data.data : [];
+
+        if (arr.length) {
+          resultData.numspy = arr.map(d => ({
+            name: d.name,
+            fname: d.fname,
+            address: d.address,
+            alt: d.alt,
+            circle: d.circle,
+            id: d.id
+          }));
+          idsToProcess = uniqStrings(arr.map(d => d.id).filter(Boolean));
+        }
       }
     }
 
-    // 🔹 Step 2: अगर aadhaar manually दिया गया है तो उसे भी जोड़ें
+    // 🔹 Step 2: अगर manually Aadhaar दिया गया है तो उसे जोड़ो
     if (aadhaarInput) {
       idsToProcess = uniqStrings([...idsToProcess, aadhaarInput]);
     }
@@ -101,15 +108,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // 🔹 Step 4: Final JSON return (URLs hidden)
-    const anyGood = resultData.numspy || resultData.ration.length || resultData.aadhar.length;
+    // 🔹 Step 4: Final Response
+    const anyGood =
+      (resultData.numspy && resultData.numspy.length) ||
+      resultData.ration.length ||
+      resultData.aadhar.length;
 
     return res.status(200).json({
       success: Boolean(anyGood),
       message: anyGood
-        ? "तीनों API से डेटा प्राप्त हुआ।"
+        ? "सभी APIs से डेटा प्राप्त हुआ।"
         : "कोई डेटा नहीं मिला।",
-      data: resultData
+      data: resultData,
+      developer: "Happy 😊"
     });
 
   } catch (e) {
